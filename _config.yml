@@ -10,7 +10,7 @@ pygments: true
 # so be sure to set them if your theme uses them.
 #
 title : Alan Z Blog
-tagline: Site Tagline
+tagline: 
 author :
   name : Alan Zimmerman
   email : alan.zimm at gmail.com
