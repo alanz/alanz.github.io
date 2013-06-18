@@ -16,7 +16,7 @@ I am currently working on a refactoring to lift a declaration one
 level up in the code. For example, lifting the `pow = 2` declaration
 in the code below
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 sumSquares x y = sq x + sq y
     where
         sq::Int->Int
@@ -28,7 +28,7 @@ sumSquares x y = sq x + sq y
 
 should result in
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 sumSquares x y = sq x + sq y
     where
         sq::Int->Int
@@ -70,13 +70,13 @@ it must be modified to deal with the undefined areas in the GHC AST.
   [syz]: http://hackage.haskell.org/packages/archive/syz/0.2.0.0/doc/html/Data-Generics-Zipper.html
 
 There are a number of types in the AST that are populated with error
-messages so that an error is issued if the they are traversed at an
+messages so that they blow up if they are traversed at an
 inappropriate stage of GHC compilation. This unfortunately means that
 specific care must be taken to avoid them in any generic code.
 
 e.g.
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 placeHolderType :: PostTcType	-- Used before typechecking
 placeHolderType  = panic "Evaluated the place holder for a PostTcType"
 
@@ -92,7 +92,7 @@ We first define a test, parameterised on the phase, to determine if
 the type may blow up. This just attempts to cast the current zipper
 hole to the dangerous type, and if the cast succeeds returns True.
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 checkZipperStaged :: Stage -> Zipper a -> Bool
 checkZipperStaged stage z
   | isJust maybeNameSet    = checkItemStage stage (fromJust maybeNameSet)
@@ -113,7 +113,7 @@ checkZipperStaged stage z
 The above function makes use of an existing (in HaRe) test for an item against
 the specific stage
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 -- | Checks whether the current item is undesirable for analysis in the current
 --   AST Stage.
 checkItemStage :: Typeable a => Stage -> a -> Bool
@@ -134,7 +134,7 @@ checkItemStage stage x = (const False `extQ` postTcType
 With this test in hand, we can modify the existing traversals to make
 use of it. So
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 -- | Apply a generic transformation everywhere in a bottom-up manner.
 zeverywhere :: GenericT -> Zipper a -> Zipper a
 zeverywhere f z = trans f (downT g z) where
@@ -143,7 +143,7 @@ zeverywhere f z = trans f (downT g z) where
 
 becomes
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 -- | Apply a generic transformation everywhere in a bottom-up manner.
 zeverywhereStaged :: (Typeable a) 
   => Stage -> GenericT -> Zipper a -> Zipper a
@@ -167,24 +167,23 @@ So we create a function which takes a generic query, and returns the
 point in the zipper where the query matches. The zipper can then be
 manipulated as required. 
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 -- | Open a zipper to the point where the Geneneric query passes.
--- returns the original zipper if the query does not pass.
+-- returns the original zipper if the query does not pass (check this)
 zopenStaged :: (Typeable a) 
-  => Stage -> GenericQ Bool -> Zipper a -> Zipper a
+  => SYB.Stage -> SYB.GenericQ Bool -> Z.Zipper a -> [Z.Zipper a]
 zopenStaged stage q z
-  | checkZipperStaged stage z = z
-  | query q z  = z
-  | otherwise = trans id (downT g z)
+  | checkZipperStaged stage z = []
+  | Z.query q z = [z]
+  | otherwise = reverse $ Z.downQ [] g z 
   where
-    g z' = leftT g (zopenStaged stage q z')
+    g z' = (zopenStaged stage q z') ++ (Z.leftQ [] g z')
 {% endhighlight %}
-
-It is modelled on `zeverywhereStaged` above, but instead of performing
-a transformation it returns the zipper.
 
 Note that we are using a `GenericQ Bool`, so the standard `extQ`
 combinators can be used to build up a compound query.
+
+The above code is a variant of `zmapQ` in [syz][].
 
 ##### zopenStaged in use
 
@@ -195,7 +194,7 @@ for the definition of the function to be lifted, which occurs in a
   [Match]: http://www.haskell.org/ghc/docs/7.6.3/html/libraries/ghc-7.6.3/HsExpr.html#t:Match
   [FunBind]: http://www.haskell.org/ghc/docs/7.6.3/html/libraries/ghc-7.6.3/HsBinds.html#v:FunBind
 
-{% highlight haskell linenos=table %}
+{% highlight haskell %}
 liftToMatchQ :: GHC.Match GHC.Name -> Bool
 liftToMatchQ (match@(GHC.Match pats mtyp (GHC.GRHSs rhs ds))::GHC.Match GHC.Name)
     = nonEmptyList (definingDeclsNames [n] (hsBinds  ds) False False) ||
@@ -211,10 +210,11 @@ the second match of a MatchGroup.
 So, if `renamed` holds the RenamedSource for the example,
 
 {% highlight haskell %}
-let z = zopenStaged Renamer (False `mkQ` liftToMatchQ) (toZipper renamed)
+let [z] = zopenStaged Renamer (False `mkQ` liftToMatchQ) (toZipper renamed)
 {% endhighlight %}
 
 will provide a zipper `z` open to the Match containing the declaration.
+The list will be empty if the query does not find a target.
 
 #### Operating on the open zipper
 
@@ -242,6 +242,10 @@ transZM stage q t z
 
 The `transZM` function returns the zipper unchanged if it does not
 match, so it can be chained in a fold.
+
+Also, the transformation function has access to the AST stage and the
+zipper, so can navigate further to find the point higher up in AST as
+the target for the move.
 
 
 
