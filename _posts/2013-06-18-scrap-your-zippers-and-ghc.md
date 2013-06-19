@@ -16,14 +16,14 @@ I am currently working on a refactoring to lift a declaration one
 level up in the code. For example, lifting the `pow = 2` declaration
 in the code below
 
-```haskell
+{% highlight haskell %}
 sumSquares x y = sq x + sq y
     where
         sq::Int->Int
         sq 0 = 0
         sq z = z^pow
             where pow=2
-```
+{% endhighlight %}
 
 
 should result in
